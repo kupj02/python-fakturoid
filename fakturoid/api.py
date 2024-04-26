@@ -1,6 +1,7 @@
+import base64
 import re
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 import requests
@@ -16,16 +17,19 @@ link_header_pattern = re.compile(r'page=(\d+)[^>]*>; rel="last"')
 class Fakturoid(object):
     """Fakturoid API v2 - http://docs.fakturoid.apiary.io/"""
     slug = None
-    api_key = None
     user_agent = 'python-fakturoid (https://github.com/farin/python-fakturoid)'
-
+    apiv3_client_id = None
+    apiv3_client_secret = None
     _models_api = None
 
-    def __init__(self, slug, email, api_key, user_agent=None):
+    def __init__(self, slug, email, apiv3_client_id, apiv3_client_secret, user_agent=None):
         self.slug = slug
-        self.api_key = api_key
         self.email = email
         self.user_agent = user_agent or self.user_agent
+        self.apiv3_client_id = apiv3_client_id
+        self.apiv3_client_secret = apiv3_client_secret
+        self.token = None
+        self.token_expires = datetime.now()
 
         self._models_api = {
             Account: AccountApi(self),
@@ -46,6 +50,7 @@ class Fakturoid(object):
 
         def subjects_search(*args, **kwargs):
             return self._subjects_search(*args, **kwargs)
+
         self.subjects = subjects_find
         self.subjects.search = subjects_search
 
@@ -58,7 +63,9 @@ class Fakturoid(object):
                 if not mapi:
                     raise TypeError('model expected, got {0}'.format(mt.__name__))
                 return fn(self, mapi, *args, **kwargs)
+
             return wrapper
+
         return wrap
 
     def account(self):
@@ -130,11 +137,45 @@ class Fakturoid(object):
             return int(m.group(1))
         return None
 
+    def get_auth_header(self):
+        """Get authentication header for the Client Credentials flow."""
+        client_credentials = f"{self.apiv3_client_id}:{self.apiv3_client_secret}"
+        encoded_credentials = base64.b64encode(client_credentials.encode()).decode()
+        return {
+            'Authorization': f'Basic {encoded_credentials}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+
+    def authenticate(self):
+        """Authenticate using the Client Credentials flow and update the token."""
+        headers = self.get_auth_header()
+        data = {'grant_type': 'client_credentials'}
+        response = requests.post("https://app.fakturoid.cz/api/v3/oauth/token", headers=headers, json=data)
+        try:
+            response_data = response.json()
+            if response.status_code == 200:
+                self.token = response_data['access_token']
+                self.token_expires = datetime.now() + timedelta(seconds=response_data['expires_in'])
+            else:
+                raise Exception(f"Failed to authenticate: {response.status_code} - {response_data.get('error')}")
+        except ValueError as e:
+            raise
+
     def _make_request(self, method, success_status, endpoint, **kwargs):
-        url = "https://app.fakturoid.cz/api/v2/accounts/{0}/{1}.json".format(self.slug, endpoint)
-        headers = {'User-Agent': self.user_agent}
+        "Changed api version to v3"
+        if not self.token or datetime.now() > self.token_expires:
+            self.authenticate()
+
+        url = "https://app.fakturoid.cz/api/v3/accounts/{0}/{1}.json".format(self.slug, endpoint)
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'User-Agent': self.user_agent,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
         headers.update(kwargs.pop('headers', {}))
-        r = getattr(requests, method)(url, auth=(self.email, self.api_key), headers=headers, **kwargs)
+        r = getattr(requests, method)(url, headers=headers, **kwargs)
         try:
             json_result = r.json()
         except Exception:
@@ -157,10 +198,12 @@ class Fakturoid(object):
         return self._make_request('get', 200, endpoint, params=params)
 
     def _post(self, endpoint, data, params=None):
-        return self._make_request('post', 201, endpoint, headers={'Content-Type': 'application/json'}, data=json.dumps(data), params=params)
+        return self._make_request('post', 201, endpoint, headers={'Content-Type': 'application/json'},
+                                  data=json.dumps(data), params=params)
 
     def _put(self, endpoint, data):
-        return self._make_request('put', 200, endpoint, headers={'Content-Type': 'application/json'}, data=json.dumps(data))
+        return self._make_request('put', 200, endpoint, headers={'Content-Type': 'application/json'},
+                                  data=json.dumps(data))
 
     def _delete(self, endpoint):
         return self._make_request('delete', 204, endpoint)
@@ -262,7 +305,8 @@ class InvoicesApi(CrudModelApi):
     endpoint = 'invoices'
 
     STATUSES = ['open', 'sent', 'overdue', 'paid', 'cancelled']
-    EVENTS = ['mark_as_sent', 'deliver', 'pay', 'pay_proforma', 'pay_partial_proforma', 'remove_payment', 'deliver_reminder', 'cancel', 'undo_cancel']
+    EVENTS = ['mark_as_sent', 'deliver', 'pay', 'pay_proforma', 'pay_partial_proforma', 'remove_payment',
+              'deliver_reminder', 'cancel', 'undo_cancel']
     EVENT_ARGS = {
         'pay': {'paid_at', 'paid_amount'}
     }
@@ -288,7 +332,8 @@ class InvoicesApi(CrudModelApi):
 
         self.session._post('invoices/{0}/fire'.format(invoice_id), {}, params=params)
 
-    def find(self, proforma=None, subject_id=None, since=None, updated_since=None, number=None, status=None, custom_id=None):
+    def find(self, proforma=None, subject_id=None, since=None, updated_since=None, number=None, status=None,
+             custom_id=None):
         params = {}
         if subject_id:
             if not isinstance(subject_id, int):
@@ -355,7 +400,8 @@ class ExpensesApi(CrudModelApi):
 
         self.session._post('expenses/{0}/fire'.format(expense_id), {}, params=params)
 
-    def find(self, subject_id=None, since=None, updated_since=None, number=None, status=None, custom_id=None, variable_symbol=None):
+    def find(self, subject_id=None, since=None, updated_since=None, number=None, status=None, custom_id=None,
+             variable_symbol=None):
         params = {}
         if subject_id:
             if not isinstance(subject_id, int):
