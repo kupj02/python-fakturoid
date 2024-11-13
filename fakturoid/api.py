@@ -14,22 +14,20 @@ __all__ = ['Fakturoid']
 link_header_pattern = re.compile(r'page=(\d+)[^>]*>; rel="last"')
 
 
-class Fakturoid(object):
-    """Fakturoid API v2 - http://docs.fakturoid.apiary.io/"""
+class Fakturoid:
+    """Fakturoid API v3 - https://www.fakturoid.cz/api/v3"""
     slug = None
+    client_id = None
+    client_secret = None
+    token = None
+    token_expires_at = None
     user_agent = 'python-fakturoid (https://github.com/farin/python-fakturoid)'
-    apiv3_client_id = None
-    apiv3_client_secret = None
-    _models_api = None
 
-    def __init__(self, slug, email, apiv3_client_id, apiv3_client_secret, user_agent=None):
+    def __init__(self, slug, client_id, client_secret, user_agent=None):
         self.slug = slug
-        self.email = email
+        self.client_id = client_id
+        self.client_secret = client_secret
         self.user_agent = user_agent or self.user_agent
-        self.apiv3_client_id = apiv3_client_id
-        self.apiv3_client_secret = apiv3_client_secret
-        self.token = None
-        self.token_expires = datetime.now()
 
         self._models_api = {
             Account: AccountApi(self),
@@ -50,7 +48,6 @@ class Fakturoid(object):
 
         def subjects_search(*args, **kwargs):
             return self._subjects_search(*args, **kwargs)
-
         self.subjects = subjects_find
         self.subjects.search = subjects_search
 
@@ -137,42 +134,37 @@ class Fakturoid(object):
             return int(m.group(1))
         return None
 
-    def get_auth_header(self):
-        """Get authentication header for the Client Credentials flow."""
-        client_credentials = f"{self.apiv3_client_id}:{self.apiv3_client_secret}"
-        encoded_credentials = base64.b64encode(client_credentials.encode()).decode()
-        return {
-            'Authorization': f'Basic {encoded_credentials}',
+    def _get_access_token(self):
+        """Obtain a new access token using the client credentials flow."""
+        url = 'https://app.fakturoid.cz/api/v3/oauth/token'
+        headers = {
             'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'Authorization': f'Basic {base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()}'
         }
-
-    def authenticate(self):
-        """Authenticate using the Client Credentials flow and update the token."""
-        headers = self.get_auth_header()
         data = {'grant_type': 'client_credentials'}
-        response = requests.post("https://app.fakturoid.cz/api/v3/oauth/token", headers=headers, json=data)
-        try:
-            response_data = response.json()
-            if response.status_code == 200:
-                self.token = response_data['access_token']
-                self.token_expires = datetime.now() + timedelta(seconds=response_data['expires_in'])
-            else:
-                raise Exception(f"Failed to authenticate: {response.status_code} - {response_data.get('error')}")
-        except ValueError as e:
-            raise
+        response = requests.post(url, headers=headers, json=data)
+
+        if not response.ok:
+            response.raise_for_status()
+
+        token_data = response.json()
+        self.token = token_data['access_token']
+        self.token_expires_at = datetime.now() + timedelta(seconds=token_data['expires_in'])
+
+    def _ensure_token(self):
+        """Ensure a valid access token is present."""
+        if not self.token or self.token_expires_at <= datetime.now():
+            self._get_access_token()
 
     def _make_request(self, method, success_status, endpoint, **kwargs):
-        "Changed api version to v3"
-        if not self.token or datetime.now() > self.token_expires:
-            self.authenticate()
-
-        url = "https://app.fakturoid.cz/api/v3/accounts/{0}/{1}.json".format(self.slug, endpoint)
+        """Make an API request using the OAuth token."""
+        self._ensure_token()
+        url = f"https://app.fakturoid.cz/api/v3/accounts/{self.slug}/{endpoint}.json"
         headers = {
-            'Authorization': f'Bearer {self.token}',
             'User-Agent': self.user_agent,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.token}',
         }
         headers.update(kwargs.pop('headers', {}))
         r = getattr(requests, method)(url, headers=headers, **kwargs)
@@ -305,8 +297,8 @@ class InvoicesApi(CrudModelApi):
     endpoint = 'invoices'
 
     STATUSES = ['open', 'sent', 'overdue', 'paid', 'cancelled']
-    EVENTS = ['mark_as_sent', 'deliver', 'pay', 'pay_proforma', 'pay_partial_proforma', 'remove_payment',
-              'deliver_reminder', 'cancel', 'undo_cancel']
+    # todo: deal with invoice payment (https://www.fakturoid.cz/api/v3/invoice-payments)
+    EVENTS = ['mark_as_sent', 'cancel', 'undo_cancel']
     EVENT_ARGS = {
         'pay': {'paid_at', 'paid_amount'}
     }
