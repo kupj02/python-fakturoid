@@ -229,3 +229,39 @@ def create_invoice(fa: Fakturoid, invoice_data: Dict[str, Any], lines: List[Invo
         fa.save(invoice)
 
     return invoice
+
+
+def update_invoice(fa: Fakturoid, invoice_id: int, updated_data: Dict[str, Any]) -> Invoice:
+    """
+    Updates an existing Fakturoid invoice with new data.
+
+    :param fa: An authenticated Fakturoid instance.
+    :param invoice_id: The ID of the invoice to be updated.
+    :param updated_data: Dictionary with the new values for the invoice fields.
+    :return: The updated Invoice object.
+    """
+    invoice = fa.invoices.get(id=invoice_id)
+
+    for field, value in updated_data.items():
+        if hasattr(invoice, field):
+            setattr(invoice, field, value)
+
+    fa.save(invoice)
+    return invoice
+
+
+def delete_invoice(fa: Fakturoid, invoice_id: int) -> bool:
+    """
+    Deletes a Fakturoid invoice.
+
+    :param fa: An authenticated Fakturoid instance.
+    :param invoice_id: The ID of the invoice to be deleted.
+    :return: Boolean indicating if the deletion was successful.
+    """
+    try:
+        invoice = fa.invoices.get(id=invoice_id)
+        fa.delete(invoice)
+        return True
+    except Exception as e:
+        print(f"Error deleting invoice: {e}")
+        return False
