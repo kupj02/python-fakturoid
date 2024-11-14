@@ -29,10 +29,11 @@ def create_fakturoid_subject(fa: Fakturoid, data: Dict[str, str]) -> Subject:
 
     :return: A Fakturoid Subject instance representing the created or retrieved subject.
     """
-    existing_subjects = fa.subjects.search(query=data['email'])
-    for subject in existing_subjects:
-        if subject.email == data['email']:
-            return subject
+    if data.get('email'):
+        existing_subjects = fa.subjects.search(query=data['email'])
+        for subject in existing_subjects:
+            if subject.email == data['email']:
+                return subject
 
     new_subject = Subject(
         custom_id=data.get('custom_id'),
@@ -126,11 +127,12 @@ def create_fakturoid_invoice_lines(data: List[Dict[str, Any]]) -> List[InvoiceLi
     return lines
 
 
-def create_invoice(invoice_data: Dict[str, Any], lines: List[InvoiceLine]) -> Invoice:
+def create_invoice(fa: Fakturoid, invoice_data: Dict[str, Any], lines: List[InvoiceLine]) -> Invoice:
     """
     Field definitions here: https://www.fakturoid.cz/api/v3/invoices
     Creates a Fakturoid Invoice object based on provided data and line items.
 
+    :param fa: An authenticated Fakturoid instance.
     :param invoice_data: Dictionary containing invoice details. Key fields include:
                          - client details, payment methods, tax configurations, etc.
                          - Additional fields like due date, footer notes, attachments.
@@ -139,7 +141,7 @@ def create_invoice(invoice_data: Dict[str, Any], lines: List[InvoiceLine]) -> In
 
     :return: A populated Invoice object ready for saving or further processing.
     """
-    new_invoice = Invoice(
+    invoice = Invoice(
         custom_id=invoice_data.get('custom_id'),
         document_type=invoice_data.get('document_type', 'invoice'),  # default to 'invoice'
         proforma_followup_document=invoice_data.get('proforma_followup_document'),
@@ -225,4 +227,7 @@ def create_invoice(invoice_data: Dict[str, Any], lines: List[InvoiceLine]) -> In
         attachments=invoice_data.get('attachments', []),
     )
 
-    return new_invoice
+    if fa is not None:
+        fa.save(invoice)
+
+    return invoice
