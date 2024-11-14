@@ -17,6 +17,8 @@ class AbstractInvoice(models.Model):
             ('final_invoice', 'Final Invoice'),
             ('invoice', 'Invoice'),
         ],
+        blank=True,
+        null=True
     )
     proforma_followup_document = models.CharField(
         _("Proforma Followup Document"),
@@ -105,7 +107,9 @@ class AbstractInvoice(models.Model):
             ("paid", "Paid"),
             ("cancelled", "Cancelled"),
             ("uncollectible", "Uncollectible"),
-        ]
+        ],
+        blank=True,
+        null=True
     )
     issued_on = models.DateField(_("Issue Date"), blank=True, null=True)
     due = models.IntegerField(_("Due Days"), default=30)
