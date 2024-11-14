@@ -205,8 +205,6 @@ def create_invoice(fa: Fakturoid, invoice_data: Dict[str, Any], lines: List[Invo
         payment_method=invoice_data.get('payment_method', 'bank'),
         custom_payment_method=invoice_data.get('custom_payment_method'),
         hide_bank_account=invoice_data.get('hide_bank_account'),
-        currency=invoice_data.get('currency'),
-        exchange_rate=invoice_data.get('exchange_rate'),
         language=invoice_data.get('language', 'cz'),
         transferred_tax_liability=invoice_data.get('transferred_tax_liability', False),
         supply_code=invoice_data.get('supply_code'),
