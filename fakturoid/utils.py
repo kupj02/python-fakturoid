@@ -1,4 +1,8 @@
-from typing import Dict, List, Any
+import base64
+import time
+from typing import Dict, List, Any, Optional
+
+import requests
 
 from fakturoid import Fakturoid, Subject, Invoice, InvoiceLine
 
@@ -265,3 +269,45 @@ def delete_invoice(fa: Fakturoid, invoice_id: int) -> None:
         fa.delete(invoice)
     else:
         raise ValueError(f"Invoice with id {invoice_id} not found.")
+
+
+def get_fakturoid_invoice_pdf_url(invoice_id: int, slug: str):
+    return 'https://app.fakturoid.cz/api/v2/accounts/{}/invoices/{}/download.pdf' \
+        .format(slug, invoice_id)
+
+
+def download_invoice_pdf(fa: Fakturoid, invoice_id: int, retry_delay: int = 2, max_retries: int = 5) -> Optional[bytes]:
+    """
+    Downloads an invoice PDF by its ID from Fakturoid.
+    Implements retry logic in case the PDF is not immediately available.
+
+    :param fa: Fakturoid instance
+    :param invoice_id: The ID of the invoice in Fakturoid.
+    :param retry_delay: The delay between retries in seconds.
+    :param max_retries: The maximum number of retries before giving up.
+    :return: The PDF content as bytes, or None if not available after retries.
+    """
+    url = get_fakturoid_invoice_pdf_url(invoice_id, fa.slug)
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': f'Basic {base64.b64encode(f"{fa.client_id}:{fa.client_secret}".encode()).decode()}'
+    }
+    retries = 0
+    while retries < max_retries:
+        try:
+            response = requests.get(
+                url,
+                stream=True,
+                headers=headers,
+            )
+            if response.status_code == 200:
+                return response.content
+            elif response.status_code == 204:
+                time.sleep(retry_delay)
+                retries += 1
+            else:
+                response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise e
+    return None
