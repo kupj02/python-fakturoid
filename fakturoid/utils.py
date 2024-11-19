@@ -1,4 +1,3 @@
-import base64
 import time
 from typing import Dict, List, Any, Optional
 
@@ -288,12 +287,20 @@ def download_invoice_pdf(fa: Fakturoid, invoice_id: int, retry_delay: int = 2, m
     :return: The PDF content as bytes, or None if not available after retries.
     """
     url = get_fakturoid_invoice_pdf_url(invoice_id, fa.slug)
+    fa._ensure_token()
     retries = 0
+    headers = {
+        'User-Agent': fa.user_agent,
+        'Authorization': f'Bearer {fa.token}',
+        'Accept': 'application/pdf'
+    }
+
     while retries < max_retries:
         try:
             response = requests.get(
                 url,
                 stream=True,
+                headers=headers,
             )
             if response.status_code == 200:
                 return response.content
