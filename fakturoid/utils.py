@@ -272,7 +272,7 @@ def delete_invoice(fa: Fakturoid, invoice_id: int) -> None:
 
 
 def get_fakturoid_invoice_pdf_url(invoice_id: int, slug: str):
-    return 'https://app.fakturoid.cz/api/v2/accounts/{}/invoices/{}/download.pdf' \
+    return 'https://app.fakturoid.cz/api/v3/accounts/{}/invoices/{}/download.pdf' \
         .format(slug, invoice_id)
 
 
@@ -288,18 +288,12 @@ def download_invoice_pdf(fa: Fakturoid, invoice_id: int, retry_delay: int = 2, m
     :return: The PDF content as bytes, or None if not available after retries.
     """
     url = get_fakturoid_invoice_pdf_url(invoice_id, fa.slug)
-    headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': f'Basic {base64.b64encode(f"{fa.client_id}:{fa.client_secret}".encode()).decode()}'
-    }
     retries = 0
     while retries < max_retries:
         try:
             response = requests.get(
                 url,
                 stream=True,
-                headers=headers,
             )
             if response.status_code == 200:
                 return response.content
