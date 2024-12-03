@@ -1,4 +1,10 @@
-# fakturoid.cz Python API
+# fork of fakturoid.cz Python API
+I forked python fakturoid library to implement a new version of Fakturoid API V3 (https://www.fakturoid.cz/api/v3).
+It takes use of client credentials authorization method and is compatible with the new version of API. 
+I added django abstract model of Invoice and utils which out of box provide functionalites related to invoicing.
+
+
+# original readme from: fakturoid.cz Python API
 
 The Python interface to online accounting service [Fakturoid](http://fakturoid.cz/).
 
